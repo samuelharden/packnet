@@ -112,7 +112,7 @@ class Manager(object):
                 batch = batch.cuda()
             batch = Variable(batch, volatile=True)
 
-            output = self.model(batch)
+            output = self.model(batch)[0]
 
             # Init error meter.
             if error_meter is None:
