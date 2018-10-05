@@ -164,7 +164,7 @@ class Manager(object):
             dist_loss += distillation_loss(
                 pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
         # Apply cross entropy for current task.
-        output = pred_logits[-1]
+        output = pred_logits[-1][0]
         new_loss = self.criterion(output, label)
         loss = dist_loss + new_loss
 

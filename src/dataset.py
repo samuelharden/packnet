@@ -31,12 +31,15 @@ def train_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=No
     trn_lbls = trn_lbls.flatten()
     trn_lbls -= trn_lbls.min()
     trn_ds = TextDataset(trn_sent, trn_lbls)
+    trn_samp = SortishSampler(trn_sent, key=lambda x: len(trn_sent[x]), bs=batch_size//2)
+    trn_dl = DataLoader(trn_ds, batch_size//2, transpose=True, num_workers=num_workers, pad_idx=1, sampler=trn_samp)
+    return trn_dl
 
-    return data.DataLoader(trn_ds,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory)
+#    return data.DataLoader(trn_ds,
+#        batch_size=batch_size,
+#        shuffle=True,
+#        num_workers=num_workers,
+#        pin_memory=pin_memory)
 
 
 def test_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=None):
@@ -52,11 +55,14 @@ def test_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=Non
     val_lbls = val_lbls.flatten()
     val_lbls -= val_lbls.min()
     val_ds = TextDataset(val_sent, val_lbls)
-    return data.DataLoader(val_ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory)
+    val_samp = SortSampler(val_sent, key=lambda x: len(val_sent[x]))
+    val_dl = DataLoader(val_ds, batch_size, transpose=True, num_workers=num_workers, pad_idx=1, sampler=val_samp)
+    return val_dl
+#   return data.DataLoader(val_ds,
+#        batch_size=batch_size,
+#        shuffle=False,
+#        num_workers=num_workers,
+#        pin_memory=pin_memory)
 
 
 def test_loader_caffe(path, batch_size, num_workers=4, pin_memory=False):
