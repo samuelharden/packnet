@@ -63,7 +63,7 @@ class TextModelMY(nn.Module):
 
     def forward(self, x):
         x = self.shared(x)
-        x = x.view(x.size(0), -1)
+        #x = x.view(x[0].size(0), -1)
         x = self.classifier(x)
         return x
 

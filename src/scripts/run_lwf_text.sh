@@ -17,8 +17,8 @@ GPU_IDS=$3
 for (( i=0; i<${#ORDER}; i++ )); do
   dataset=${DATASETS[${ORDER:$i:1}]}
 
-  mkdir ../checkpoints/$dataset/lwf_$ORDER/
-  mkdir ../logs/$dataset/lwf_$ORDER/
+  mkdir -p ../checkpoints/$dataset/lwf_$ORDER/
+  mkdir -p ../logs/$dataset/lwf_$ORDER/
 
   if [ $i -eq 0 ]
   then
@@ -38,7 +38,7 @@ for (( i=0; i<${#ORDER}; i++ )); do
     --dataset $dataset --num_outputs ${NUM_OUTPUTS[$dataset]} \
     --train_path ../data/$dataset/\
     --test_path ../data/$dataset \
+    --loadname $loadname \
     --lr 1e-3 --lr_decay_every 10 --lr_decay_factor 0.1 --finetune_epochs 20 \
     --save_prefix $ft_savename | tee $logname'.txt'
 done
-    #--loadname $loadname \

@@ -5,7 +5,7 @@ import argparse
 import copy
 import json
 import warnings
-
+import os
 import dataset
 import networks as net
 import torch
@@ -280,8 +280,12 @@ def main():
     itos = pickle.load(open(args.train_path  + '/tmp/itos.pkl', 'rb'))
     vs = len(itos)
 
+    exists = False
+    if args.loadname:
+      exist = os.path.isfile(args.loadname)
+    print("Load model file available ? ", exist)
     # Load the required model.
-    if 'finetune' in args.mode and not args.loadname:
+    if 'finetune' in args.mode and not exists:
         model = net.TextModelMY(vocabulary_size=vs)
         dataset2idx = {}
     else:
