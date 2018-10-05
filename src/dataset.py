@@ -14,7 +14,9 @@ import torch.utils.data as data
 import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
-
+from pathlib import Path
+from fastai.text import *
+from fastai.lm_rnn import *
 
 def train_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=None):
     if normalize is None:

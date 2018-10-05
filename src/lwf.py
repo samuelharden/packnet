@@ -17,6 +17,7 @@ import utils as utils
 from prune import SparsePruner
 from torch.autograd import Variable
 from tqdm import tqdm
+import pickle
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -276,9 +277,13 @@ def main():
         else:
             args.test_path = '../data/%s/test' % (args.dataset)
 
+    itos = pickle.load(open(args.train_path  + '/tmp/itos.pkl', 'rb'))
+    vs = len(itos)
+
     # Load the required model.
     if 'finetune' in args.mode and not args.loadname:
-        model = net.TextModelMY()
+        model = net.TextModelMY(vocabulary_size=vs)
+        dataset2idx = {}
     else:
         ckpt = torch.load(args.loadname)
         model = ckpt['model']
@@ -291,7 +296,10 @@ def main():
     model.set_dataset(args.dataset)
     if args.dataset not in dataset2idx:
         idxs = [dataset2idx[key] for key in dataset2idx]
-        dataset2idx[args.dataset] = max(idxs) + 1
+        if len(idxs) == 0:
+          dataset2idx[args.dataset] =  1
+        else:
+          dataset2idx[args.dataset] = max(idxs) + 1
     if args.cuda:
         model = model.cuda(0)
         if args.mode == 'finetune':

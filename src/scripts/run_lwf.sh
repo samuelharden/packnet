@@ -42,7 +42,7 @@ for (( i=0; i<${#ORDER}; i++ )); do
   ##############################################################################
   CUDA_VISIBLE_DEVICES=$GPU_IDS python lwf.py --mode finetune \
     --dataset $dataset --num_outputs ${NUM_OUTPUTS[$dataset]} \
-    --loadname $loadname \
     --lr 1e-3 --lr_decay_every 10 --lr_decay_factor 0.1 --finetune_epochs 20 \
     --save_prefix $ft_savename | tee $logname'.txt'
 done
+   # --loadname $loadname \

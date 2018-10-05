@@ -25,20 +25,22 @@ class View(nn.Module):
 class TextModelMY(nn.Module):
     """Text Module from fastai used else where and different classifier"""
 
-    def __init__(self, make_model=True):
+    def __init__(self, make_model=True, vocabulary_size=30002):
         super(TextModelMY, self).__init__()
+        self.vocabulary_size = vocabulary_size
         if make_model:
             self.make_model()
 
     def make_model(self):
         """Creates the model."""
         # Get the pretrained model.
-	bptt,em_sz,nh,nl = 70,400,1150,3
+        bptt,em_sz,nh,nl = 70,400,1150,3
         dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
+        self.datasets, self.classifiers = [], nn.ModuleList()
 
         # Shared params are those which are to be pruned.
-        self.shared = MultiBatchRNN(bptt, 20*70, n_tok, em_sz, nh, nl, 1, False,
-                      dropouth=dps[3], dropouti=dps[0], dropoute=dps[2], wdrop=dps[1], False)
+        self.shared = MultiBatchRNN(bptt, 20*70, self.vocabulary_size, em_sz, nh, nl, 1, False,
+                      dropouth=dps[3], dropouti=dps[0], dropoute=dps[2], wdrop=dps[1], qrnn=False)
 
         # model.set_dataset() has to be called explicity, else model won't work.
         self.classifier = None
@@ -48,7 +50,8 @@ class TextModelMY(nn.Module):
 
     def add_dataset(self, dataset, num_outputs):
         """Adds a new dataset to the classifier."""
-        dps = np.array([0.4,0.5,0.05,0.3,0.4])*dropmult
+        bptt,em_sz,nh,nl = 70,400,1150,3
+        dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
         if dataset not in self.datasets:
             self.datasets.append(dataset)
             self.classifiers.append(PoolingLinearClassifier([em_sz*3, 50, num_outputs], [dps[4], 0.1]))
