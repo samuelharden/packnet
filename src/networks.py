@@ -6,6 +6,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import models
 
+from fastai.text import *
+from fastai.lm_rnn import *
+
+
 
 class View(nn.Module):
     """Changes view using a nn.Module."""
@@ -16,6 +20,74 @@ class View(nn.Module):
 
     def forward(self, input):
         return input.view(*self.shape)
+
+
+class TextModelMY(nn.Module):
+    """Text Module from fastai used else where and different classifier"""
+
+    def __init__(self, make_model=True):
+        super(TextModelMY, self).__init__()
+        if make_model:
+            self.make_model()
+
+    def make_model(self):
+        """Creates the model."""
+        # Get the pretrained model.
+	bptt,em_sz,nh,nl = 70,400,1150,3
+        dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
+
+        # Shared params are those which are to be pruned.
+        self.shared = MultiBatchRNN(bptt, 20*70, n_tok, em_sz, nh, nl, 1, False,
+                      dropouth=dps[3], dropouti=dps[0], dropoute=dps[2], wdrop=dps[1], False)
+
+        # model.set_dataset() has to be called explicity, else model won't work.
+        self.classifier = None
+
+        # Make sure conv transform is correct.
+        # self.check_correctness(vgg16)
+
+    def add_dataset(self, dataset, num_outputs):
+        """Adds a new dataset to the classifier."""
+        dps = np.array([0.4,0.5,0.05,0.3,0.4])*dropmult
+        if dataset not in self.datasets:
+            self.datasets.append(dataset)
+            self.classifiers.append(PoolingLinearClassifier([em_sz*3, 50, num_outputs], [dps[4], 0.1]))
+
+    def set_dataset(self, dataset):
+        """Change the active classifier."""
+        assert dataset in self.datasets
+        self.classifier = self.classifiers[self.datasets.index(dataset)]
+
+    def forward(self, x):
+        x = self.shared(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
+    def train_nobn(self, mode=True):
+        """Override the default module train."""
+        super(TextModelMY, self).train(mode)
+
+    def check_correctness(self, vgg16):
+        """Ensures that conversion of fc layers to conv is correct."""
+        # Test to make sure outputs match.
+    #    vgg16.eval()
+     #   self.shared.eval()
+     #   self.classifier.eval()
+
+      #  rand_input = Variable(torch.rand(1, 3, 224, 224))
+       # fc_output = vgg16(rand_input)
+       # print(fc_output)
+
+        #x = self.shared(rand_input)
+        #x = x.view(x.size(0), -1)
+        #conv_output = self.classifier[-1](x)
+        #print(conv_output)
+
+        #print(torch.sum(torch.abs(fc_output - conv_output)))
+        #assert torch.sum(torch.abs(fc_output - conv_output)).data[0] < 1e-8
+        print('Check passed')
+        raw_input()
 
 
 class ModifiedVGG16(nn.Module):

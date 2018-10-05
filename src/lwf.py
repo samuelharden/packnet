@@ -278,7 +278,7 @@ def main():
 
     # Load the required model.
     if 'finetune' in args.mode and not args.loadname:
-        model = net.ModifiedVGG16()
+        model = net.TextModelMY()
     else:
         ckpt = torch.load(args.loadname)
         model = ckpt['model']

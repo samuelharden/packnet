@@ -20,15 +20,17 @@ def train_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=No
     if normalize is None:
         normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    return data.DataLoader(
-        datasets.ImageFolder(path,
-                             transforms.Compose([
-                                 transforms.Scale(256),
-                                 transforms.RandomSizedCrop(224),
-                                 transforms.RandomHorizontalFlip(),
-                                 transforms.ToTensor(),
-                                 normalize,
-                             ])),
+    PRE = 'fwd_'
+    IDS = 'ids'
+    train_file_id = ''
+    dir_path = Path(path)
+    trn_sent = np.load(dir_path / 'tmp' / f'trn_{IDS}{train_file_id}.npy')
+    trn_lbls = np.load(dir_path / 'tmp' / f'lbl_trn{train_file_id}.npy')
+    trn_lbls = trn_lbls.flatten()
+    trn_lbls -= trn_lbls.min()
+    trn_ds = TextDataset(trn_sent, trn_lbls)
+
+    return data.DataLoader(trn_ds,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -39,14 +41,16 @@ def test_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=Non
     if normalize is None:
         normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    return data.DataLoader(
-        datasets.ImageFolder(path,
-                             transforms.Compose([
-                                 transforms.Scale(256),
-                                 transforms.CenterCrop(224),
-                                 transforms.ToTensor(),
-                                 normalize,
-                             ])),
+    PRE = 'fwd_'
+    IDS = 'ids'
+    train_file_id = ''
+    dir_path = Path(path)
+    val_sent = np.load(dir_path / 'tmp' / f'val_{IDS}.npy')
+    val_lbls = np.load(dir_path / 'tmp' / f'lbl_val.npy')
+    val_lbls = val_lbls.flatten()
+    val_lbls -= val_lbls.min()
+    val_ds = TextDataset(val_sent, val_lbls)
+    return data.DataLoader(val_ds,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
