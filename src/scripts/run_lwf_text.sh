@@ -13,6 +13,7 @@ NUM_OUTPUTS["ag"]="4"
 ORDER=$1
 LOADNAME=$2
 GPU_IDS=$3
+MODE=$4
 
 for (( i=0; i<${#ORDER}; i++ )); do
   dataset=${DATASETS[${ORDER:$i:1}]}
@@ -34,7 +35,7 @@ for (( i=0; i<${#ORDER}; i++ )); do
   ##############################################################################
   # Train on current dataset.
   ##############################################################################
-  CUDA_VISIBLE_DEVICES=$GPU_IDS python lwf.py --mode finetune \
+  CUDA_VISIBLE_DEVICES=$GPU_IDS python lwf.py --mode $MODE \
     --dataset $dataset --num_outputs ${NUM_OUTPUTS[$dataset]} \
     --train_path ../data/$dataset/\
     --test_path ../data/$dataset \

@@ -18,6 +18,10 @@ from prune import SparsePruner
 from torch.autograd import Variable
 from tqdm import tqdm
 import pickle
+from sklearn.metrics import confusion_matrix
+import numpy as np
+from fastai.text import *
+from fastai.lm_rnn import *
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -105,14 +109,25 @@ class Manager(object):
         """Performs evaluation."""
         self.model.eval()
         error_meter = None
-
+        labels_orig = []
+        predictions_orig = []
         print('Performing eval...')
         for batch, label in tqdm(self.test_data_loader, desc='Eval'):
             if self.cuda:
                 batch = batch.cuda()
             batch = Variable(batch, volatile=True)
 
-            output = self.model(batch)[0]
+            raw_output = self.model(batch)
+            output = raw_output[0]
+            output_np = to_np(output)
+            #print("Outputs", output_np)
+            predictions = np.argmax(output_np, axis=1)
+            #print("Predictions", predictions)
+            label_np = to_np(label)
+            #print("Labels", label_np)
+
+            labels_orig.extend(label_np)
+            predictions_orig.extend(predictions)
 
             # Init error meter.
             if error_meter is None:
@@ -122,6 +137,9 @@ class Manager(object):
                 error_meter = tnt.meter.ClassErrorMeter(topk=topk)
             error_meter.add(output.data, label)
 
+        acc = (label_np == predictions).mean()
+        print('Accuracy =', acc, 'Confusion Matrix =')
+        print(confusion_matrix(to_np(label), predictions))
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
                                     t for t in zip(topk, errors)))
