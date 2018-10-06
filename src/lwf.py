@@ -143,6 +143,7 @@ class Manager(object):
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
                                     t for t in zip(topk, errors)))
+        sys.stdout.flush() 
         self.model.train()
         return errors
 
