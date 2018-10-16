@@ -136,10 +136,8 @@ class Manager(object):
                     topk.append(5)
                 error_meter = tnt.meter.ClassErrorMeter(topk=topk)
             error_meter.add(output.data, label)
-
-        acc = (label_np == predictions).mean()
-        print('Accuracy =', acc, 'Confusion Matrix =')
-        print(confusion_matrix(to_np(label), predictions))
+        print("Labels, ", labels_orig, "predictions : ", predictions_orig)
+        print(confusion_matrix(labels_orig, predictions_orig))
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
                                     t for t in zip(topk, errors)))
