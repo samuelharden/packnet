@@ -118,7 +118,7 @@ class Manager(object):
                 batch = batch.cuda()
             batch = Variable(batch, volatile=True)
 
-            raw_output = self.model(batch)
+            raw_output = self.model.forward(batch)
             output = raw_output[0]
             output_np = to_np(output)
             #print("Outputs", output_np)
@@ -248,7 +248,14 @@ class Manager(object):
         lrm=2.6
         lrs = np.array([lr/(lrm**4), lr/(lrm**3), lr/(lrm**2), lr/lrm, lr])
         wd=1e-6
-        learn.fit(lrs, 45, wds=wd)
+        learn.unfreeze()
+        #learn.fit(lrs, 3, wds=wd)
+        self.model.shared = self.model.model[0]
+        self.model.classifier = self.model.model[1]
+
+        set_trainable(children(self.model.shared), True)
+        set_trainable(children(self.model.classifier), True)
+
         for idx in range(epochs):
             epoch_idx = idx + 1
             print('Epoch: %d' % (epoch_idx))
