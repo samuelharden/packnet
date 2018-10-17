@@ -168,7 +168,7 @@ class Manager(object):
 
         # Work with current model.
         # Set grads to 0.
-        self.model.zero_grad()
+ #       self.model.zero_grad()
 
         # Do forward.
         x = self.model.shared(batch)
@@ -188,17 +188,17 @@ class Manager(object):
         # Do backward.
         loss.backward()
 
-        if epoch_idx <= self.args.ft_shared_after:
+#        if epoch_idx <= self.args.ft_shared_after:
             # Set shared layer gradients to 0 if early epochs.
-            for module in self.model.shared.modules():
-                if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
-                    module.weight.grad.data.fill_(0)
-                    module.bias.grad.data.fill_(0)
+#            for module in self.model.shared.modules():
+#                if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
+#                    module.weight.grad.data.fill_(0)
+#                    module.bias.grad.data.fill_(0)
             # Set old classifier gradients to 0 if early epochs.
-            for idx in range(len(self.model.classifiers) - 1):
-                module = self.model.classifiers[idx]
-                module.weight.grad.data.fill_(0)
-                module.bias.grad.data.fill_(0)
+#            for idx in range(len(self.model.classifiers) - 1):
+#                module = self.model.classifiers[idx]
+#                module.weight.grad.data.fill_(0)
+#                module.bias.grad.data.fill_(0)
 
         # Update params.
         optimizer.step()
@@ -303,7 +303,9 @@ def main():
     print("Load model file available ? ", exist)
     # Load the required model.
     if 'finetune' in args.mode and not exists:
-        model = net.TextModelMY(vocabulary_size=vs)
+        print("Loading new mode")
+        model = net.TextModelMY()
+        load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
         dataset2idx = {}
     else:
         ckpt = torch.load(args.loadname)
