@@ -60,6 +60,7 @@ class TextModelMY(nn.Module):
         """Change the active classifier."""
         assert dataset in self.datasets
         self.classifier = self.classifiers[self.datasets.index(dataset)]
+        self.model = nn.Sequential(self.shared, self.classifier)
 
     def forward(self, x):
         x = self.shared(x)

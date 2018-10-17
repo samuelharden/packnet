@@ -22,6 +22,7 @@ from sklearn.metrics import confusion_matrix
 import numpy as np
 from fastai.text import *
 from fastai.lm_rnn import *
+import fastai.metrics as metrics
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -235,6 +236,19 @@ class Manager(object):
         if self.args.cuda:
             self.model = self.model.cuda()
 
+        md = ModelData(self.args.train_path, self.train_data_loader, self.test_data_loader)
+        bptt,em_sz,nh,nl = 70,400,1150,3
+        opt_fn = partial(optim.Adam, betas=(0.8, 0.99))
+        dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
+        learn = RNN_Learner(md, TextModel(to_gpu(self.model.model)), opt_fn=opt_fn)
+        learn.reg_fn = partial(seq2seq_reg, alpha=2, beta=1)
+        learn.clip=25.
+        learn.metrics = [metrics.accuracy]
+        lr=0.01
+        lrm=2.6
+        lrs = np.array([lr/(lrm**4), lr/(lrm**3), lr/(lrm**2), lr/lrm, lr])
+        wd=1e-6
+        learn.fit(lrs, 45, wds=wd)
         for idx in range(epochs):
             epoch_idx = idx + 1
             print('Epoch: %d' % (epoch_idx))
@@ -314,6 +328,7 @@ def main():
 
     original_model = copy.deepcopy(model)
 
+    
     # Add and set the model dataset.
     model.add_dataset(args.dataset, args.num_outputs)
     model.set_dataset(args.dataset)
