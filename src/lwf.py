@@ -214,9 +214,9 @@ class Manager(object):
     def do_epoch(self, epoch_idx, optimizer):
         """Trains model for one epoch."""
         print("Epoch ", epoch_idx)
-        self.learn.fit(self.lrs, 1, wds=self.wd)
-        #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
-        #    self.do_batch(optimizer, batch, label, epoch_idx)
+        #self.learn.fit(self.lrs, 1, wds=self.wd)
+        for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
+            self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
 #        for para in self.model.shared.parameters():
 #          print("Is is grad true", para.requires_grad, type(para.data), para.size(), para.data)
@@ -270,6 +270,7 @@ class Manager(object):
         #self.learn.fit(self.lrs, 3, wds=self.wd)
         self.model.shared = self.model.model[0]
         self.model.classifier = self.model.model[1]
+        optimizer = self.learn.get_layer_opt(self.lrs, self.wd).opt
 
         set_trainable(children(self.model.shared), True)
         set_trainable(children(self.model.classifier), True)
