@@ -137,7 +137,7 @@ class Manager(object):
                     topk.append(5)
                 error_meter = tnt.meter.ClassErrorMeter(topk=topk)
             error_meter.add(output.data, label)
-        print("Labels, ", labels_orig, "predictions : ", predictions_orig)
+        #print("Labels, ", labels_orig, "predictions : ", predictions_orig)
         print(confusion_matrix(labels_orig, predictions_orig))
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
@@ -156,35 +156,42 @@ class Manager(object):
         batch_original = Variable(batch_original, requires_grad=False)
         batch = Variable(batch)
         label = Variable(label)
+        self.model.zero_grad()
 
         # Get targets using original model.
-        self.original_model.eval()
-        x = self.original_model.shared(batch_original)
-        target_logits = [classifier(x).data.cpu()
-                         for classifier in self.original_model.classifiers]
+        #self.original_model.eval()
+        #x = self.original_model.shared(batch_original)
+        #target_logits = [classifier(x).data.cpu()
+        #                 for classifier in self.original_model.classifiers]
         # Move to same GPU as current model.
-        target_logits = [Variable(item.cuda(), requires_grad=False)
-                         for item in target_logits]
-        scale = [item.size(-1) for item in target_logits]
+        #target_logits = [Variable(item.cuda(), requires_grad=False)
+        #                 for item in target_logits]
+        #scale = [item.size(-1) for item in target_logits]
 
         # Work with current model.
         # Set grads to 0.
- #       self.model.zero_grad()
 
         # Do forward.
         x = self.model.shared(batch)
-        pred_logits = [classifier(x) for classifier in self.model.classifiers]
+        #pred_logits = [classifier(x) for classifier in self.model.classifiers]
 
         # Compute loss.
-        dist_loss = 0
+        #dist_loss = 0
         # Apply distillation loss to all old tasks.
-        for idx in range(len(target_logits)):
-            dist_loss += distillation_loss(
-                pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
+        #for idx in range(len(target_logits)):
+        #    dist_loss += distillation_loss(
+        #        pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
         # Apply cross entropy for current task.
-        output = pred_logits[-1][0]
+        #output = pred_logits[-1][0]
+        output = self.model.classifier(x)[0]
+        #output_np = to_np(output)
+        #print("Outputs", output_np)
+        #predictions = np.argmax(output_np, axis=1)
+        #print("Output", output)
+        #print("labels there", label)
         new_loss = self.criterion(output, label)
-        loss = dist_loss + new_loss
+        loss =  new_loss
+        print("Losss", loss.data)
 
         # Do backward.
         loss.backward()
@@ -208,6 +215,15 @@ class Manager(object):
         """Trains model for one epoch."""
         for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
             self.do_batch(optimizer, batch, label, epoch_idx)
+#        print("Params for shared")
+#        for para in self.model.shared.parameters():
+#          print("Is is grad true", para.requires_grad, type(para.data), para.size(), para.data)
+#        print("Params for classifier")
+#        for para in self.model.classifier.parameters():
+#          print("Is is grad true", para.requires_grad, type(para.data), para.size(), para.data)
+#        print("Params for model")
+#        for para in self.model.model.parameters():
+#          print("Is is grad true", para.requires_grad, type(para.data), para.size(), para.data)
 
     def save_model(self, epoch, best_accuracy, errors, savename):
         """Saves model to file."""
@@ -240,16 +256,16 @@ class Manager(object):
         bptt,em_sz,nh,nl = 70,400,1150,3
         opt_fn = partial(optim.Adam, betas=(0.8, 0.99))
         dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
-        learn = RNN_Learner(md, TextModel(to_gpu(self.model.model)), opt_fn=opt_fn)
-        learn.reg_fn = partial(seq2seq_reg, alpha=2, beta=1)
-        learn.clip=25.
-        learn.metrics = [metrics.accuracy]
+        self.learn = RNN_Learner(md, TextModel(to_gpu(self.model.model)), opt_fn=opt_fn)
+        self.learn.reg_fn = partial(seq2seq_reg, alpha=2, beta=1)
+        self.learn.clip=25.
+        self.learn.metrics = [metrics.accuracy]
         lr=0.01
         lrm=2.6
-        lrs = np.array([lr/(lrm**4), lr/(lrm**3), lr/(lrm**2), lr/lrm, lr])
-        wd=1e-6
-        learn.unfreeze()
-        #learn.fit(lrs, 3, wds=wd)
+        self.lrs = np.array([lr/(lrm**4), lr/(lrm**3), lr/(lrm**2), lr/lrm, lr])
+        self.wd=1e-6
+        self.learn.unfreeze()
+        #self.learn.fit(self.lrs, 3, wds=self.wd)
         self.model.shared = self.model.model[0]
         self.model.classifier = self.model.model[1]
 
@@ -355,9 +371,13 @@ def main():
 
     # Perform necessary mode operations.
     if args.mode == 'finetune':
+        print("Doing the fine tuning")
         # Get optimizer with correct params.
         if args.finetune_layers == 'all':
-            params_to_optimize = model.parameters()
+            print("Doing the fine tuning for all later")
+            for idx, m in enumerate(model.modules()):
+              print(idx, '->', m)
+            params_to_optimize = [ {'params': model.shared.parameters()}, {'params': model.classifier.parameters()}]
         elif args.finetune_layers == 'classifier':
             for param in model.shared.parameters():
                 param.requires_grad = False
@@ -375,8 +395,9 @@ def main():
             for param in model.classifier.parameters():
                 params_to_optimize.append(param)
             params_to_optimize = iter(params_to_optimize)
-        optimizer = optim.SGD(params_to_optimize, lr=args.lr,
-                              momentum=0.9, weight_decay=args.weight_decay)
+#        optimizer = optim.SGD(params_to_optimize, lr=args.lr,
+ #                             momentum=0.9, weight_decay=args.weight_decay)
+        optimizer = optim.Adam(params_to_optimize)
         # Perform finetuning.
         manager.train(args.finetune_epochs, optimizer,
                       save=True, savename=args.save_prefix)
