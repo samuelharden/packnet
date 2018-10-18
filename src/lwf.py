@@ -156,7 +156,6 @@ class Manager(object):
         batch_original = Variable(batch_original, requires_grad=False)
         batch = Variable(batch)
         label = Variable(label)
-        self.model.zero_grad()
 
         # Get targets using original model.
         #self.original_model.eval()
@@ -172,7 +171,8 @@ class Manager(object):
         # Set grads to 0.
 
         # Do forward.
-        x = self.model.shared(batch)
+        x = self.model.model(batch)
+        optimizer.zero_grad()
         #pred_logits = [classifier(x) for classifier in self.model.classifiers]
 
         # Compute loss.
@@ -183,13 +183,14 @@ class Manager(object):
         #        pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
         # Apply cross entropy for current task.
         #output = pred_logits[-1][0]
-        output = self.model.classifier(x)[0]
+        #output = self.model.classifier(x)[0]
+        #output = x[0]
         #output_np = to_np(output)
         #print("Outputs", output_np)
         #predictions = np.argmax(output_np, axis=1)
         #print("Output", output)
         #print("labels there", label)
-        new_loss = self.criterion(output, label)
+        new_loss = self.criterion(x[0], label)
         loss =  new_loss
         print("Losss", loss.data)
 
