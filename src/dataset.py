@@ -18,7 +18,7 @@ from pathlib import Path
 from fastai.text import *
 from fastai.lm_rnn import *
 
-def train_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=None):
+def train_loader(path, batch_size, num_workers=1, pin_memory=False, normalize=None):
     if normalize is None:
         normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -42,7 +42,7 @@ def train_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=No
 #        pin_memory=pin_memory)
 
 
-def test_loader(path, batch_size, num_workers=4, pin_memory=False, normalize=None):
+def test_loader(path, batch_size, num_workers=1, pin_memory=False, normalize=None):
     if normalize is None:
         normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
