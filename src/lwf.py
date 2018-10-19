@@ -217,8 +217,16 @@ class Manager(object):
         """Trains model for one epoch."""
         print("Epoch ", epoch_idx)
         #self.learn.fit(self.lrs, 1, wds=self.wd)
-        for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
-            self.do_batch(optimizer, batch, label, epoch_idx)
+        callbacks = []
+        batch_per_epoch = len(self.md.trn_dl)
+        cl = 1
+        self.wd_sched = WeightDecaySchedule(self.loptimizer, batch_per_epoch, cl, 1, 1,
+                                                False, None)
+        callbacks += [self.wd_sched]
+        fit(self.modell.model, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics)
+        #,clip=self.learn.clip, reg_fn=self.learn.reg_fn)
+        #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
+        #    self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
 #        for para in self.model.shared.parameters():
 #          print("Is is grad true", para.requires_grad, type(para.data), para.size(), para.data)
@@ -256,11 +264,12 @@ class Manager(object):
         if self.args.cuda:
             self.model = self.model.cuda()
 
-        md = ModelData(self.args.train_path, self.train_data_loader, self.test_data_loader)
+        self.md = ModelData(self.args.train_path, self.train_data_loader, self.test_data_loader)
         bptt,em_sz,nh,nl = 70,400,1150,3
         opt_fn = partial(optim.Adam, betas=(0.8, 0.99))
         dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
-        self.learn = RNN_Learner(md, TextModel(to_gpu(self.model.model)), opt_fn=opt_fn)
+        self.modell = TextModel(to_gpu(self.model.model))
+        self.learn = RNN_Learner(self.md, TextModel(to_gpu(self.model.model)), opt_fn=opt_fn)
         self.learn.reg_fn = partial(seq2seq_reg, alpha=2, beta=1)
         self.learn.clip=25.
         self.learn.metrics = [metrics.accuracy]
@@ -273,6 +282,7 @@ class Manager(object):
         self.model.shared = self.model.model[0]
         self.model.classifier = self.model.model[1]
         optimizer = self.learn.get_layer_opt(self.lrs, self.wd).opt
+        self.loptimizer = self.learn.get_layer_opt(self.lrs, self.wd)
 
         set_trainable(children(self.model.shared), True)
         set_trainable(children(self.model.classifier), True)
