@@ -21,6 +21,7 @@ import pickle
 from sklearn.metrics import confusion_matrix
 import numpy as np
 from fastai.text import *
+from fastai.core import *
 from fastai.lm_rnn import *
 import fastai.metrics as metrics
 
@@ -150,7 +151,7 @@ class Manager(object):
         """Runs model for one batch."""
         batch_original = batch.clone()
         if self.cuda:
-            batch_original = batch_original.cuda(1)
+        #    batch_original = batch_original.cuda(1)
             batch = batch.cuda()
             label = label.cuda()
         batch_original = Variable(batch_original, requires_grad=False)
@@ -367,8 +368,8 @@ def main():
           dataset2idx[args.dataset] = max(idxs) + 1
     if args.cuda:
         model = model.cuda(0)
-        if args.mode == 'finetune':
-            original_model = original_model.cuda(1)
+        #if args.mode == 'finetune':
+        #    original_model = original_model.cuda(1)
 
     # Create the manager object.
     manager = Manager(args, original_model, model, dataset2idx)
