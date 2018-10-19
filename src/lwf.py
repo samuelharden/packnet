@@ -172,8 +172,8 @@ class Manager(object):
         # Set grads to 0.
 
         # Do forward.
-        x = self.model.model(batch)
         optimizer.zero_grad()
+        x = self.model.model(batch)
         #pred_logits = [classifier(x) for classifier in self.model.classifiers]
 
         # Compute loss.
