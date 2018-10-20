@@ -83,9 +83,10 @@ def distillation_loss(y, teacher_scores, T, scale):
     return F.kl_div(F.log_softmax(y / T), F.softmax(teacher_scores / T)) * scale
 
 class Stepper():
-    def __init__(self, m, opt, crit, original_model, clip=0, reg_fn=None, fp16=False, loss_scale=1):
+    def __init__(self, m, opt, crit, original_model, this_model, clip=0, reg_fn=None, fp16=False, loss_scale=1):
         self.m,self.opt,self.crit,self.clip,self.reg_fn = m.model,opt,crit,clip,reg_fn
         self.om = original_model
+        self.this_model = this_model
         self.modell = m
         self.fp16 = fp16
         self.reset(True)
@@ -101,7 +102,25 @@ class Stepper():
 
     def step(self, xs, y, epoch):
         xtra = []
-        output = self.m(*xs)
+        ll = xs[0]
+        print(type(xs), xs)
+        print(type(ll), ll)
+        batch_original = ll.data.clone()
+        batch_original = batch_original.cuda(1)
+        batch_original = Variable(batch_original, requires_grad=False)
+        orig_output = self.om.shared(batch_original)
+        print(batch_original, orig_output)
+        target_logits = [classifier(orig_output[0]).data.cpu()
+                         for classifier in self.om.classifiers]
+        # Move to same GPU as current model.
+        target_logits = [Variable(item.cuda(), requires_grad=False)
+                         for item in target_logits]
+        scale = [item.size(-1) for item in target_logits]
+
+        output = self.this_model.shared(*xs)
+        pred_logits = [classifier(output) for classifier in self.this_model.classifiers]
+        output = pred_logits[-1]
+        
         if isinstance(output,tuple): output,*xtra = output
         if self.fp16: self.m.zero_grad()
         else: self.opt.zero_grad() 
@@ -275,7 +294,7 @@ class Manager(object):
         callbacks += [self.wd_sched]
         #s = Stepper(self.modell.model, self.loptimizer.opt, self.criterion)
         fit(self.modell, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
-        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model)
+        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model, this_model=self.model)
         #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
         #    self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
