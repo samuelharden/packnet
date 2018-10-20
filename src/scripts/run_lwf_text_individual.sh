@@ -20,12 +20,20 @@ LOADNAME=$2
 GPU_IDS=$3
 MODE=$4
 dataset=$5
+FTNAME=$6
 tag=$ORDER
-mkdir -p ../checkpoints/$dataset/lwf_$ORDER/
-mkdir -p ../logs/$dataset/lwf_$ORDER/
-ft_savename=../checkpoints/$dataset/lwf_$ORDER/$tag
-logname=../logs/$dataset/lwf_$ORDER/$tag
-loadname=$ft_savename'.pt'
+if [ -f $LOADNAME ]
+then
+  ft_savename=$FTNAME
+  loadname=$LOADNAME
+  logname=../logs/$tag
+else
+  mkdir -p ../checkpoints/$dataset/lwf_$ORDER/
+  mkdir -p ../logs/$dataset/lwf_$ORDER/
+  ft_savename=../checkpoints/$dataset/lwf_$ORDER/$tag
+  logname=../logs/$dataset/lwf_$ORDER/$tag
+  loadname=$ft_savename'.pt'
+fi
 
 
   ##############################################################################

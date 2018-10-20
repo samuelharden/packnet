@@ -110,27 +110,29 @@ class Stepper():
         batch_original = Variable(batch_original, requires_grad=False)
         orig_output = self.om.shared(batch_original)
         #print(batch_original, orig_output)
-        target_logits = [classifier(orig_output[0]).data.cpu()
+        target_logits = [classifier(orig_output)[0].data.cpu()
                          for classifier in self.om.classifiers]
         # Move to same GPU as current model.
         target_logits = [Variable(item.cuda(), requires_grad=False)
                          for item in target_logits]
         scale = [item.size(-1) for item in target_logits]
+        output = self.this_model.shared(*xs)
+        pred_logits = [classifier(output) for classifier in self.this_model.classifiers]
+        output = pred_logits[-1]
+
         # Compute loss.
         dist_loss = 0
         # Apply distillation loss to all old tasks.
         for idx in range(len(target_logits)):
             dist_loss += distillation_loss(
-                pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
-        print("Dist loss", dist_loss)
-        output = self.this_model.shared(*xs)
-        pred_logits = [classifier(output) for classifier in self.this_model.classifiers]
-        output = pred_logits[-1]
+                pred_logits[idx][0], target_logits[idx], 2.0, scale[idx])
+        #print("Dist loss", dist_loss, len(self.this_model.classifiers))
         
         if isinstance(output,tuple): output,*xtra = output
         if self.fp16: self.m.zero_grad()
         else: self.opt.zero_grad() 
         loss = raw_loss = self.crit(output, y)
+        loss = loss + dist_loss
         if self.loss_scale != 1: assert(self.fp16); loss = loss*self.loss_scale
         if self.reg_fn: loss = self.reg_fn(output, xtra, raw_loss)
         loss.backward()
@@ -226,7 +228,7 @@ class Manager(object):
         """Runs model for one batch."""
         batch_original = batch.clone()
         if self.cuda:
-        #    batch_original = batch_original.cuda(1)
+            batch_original = batch_original.cuda(1)
             batch = batch.cuda()
             label = label.cuda()
         batch_original = Variable(batch_original, requires_grad=False)
@@ -427,10 +429,11 @@ def main():
 
     exists = False
     if args.loadname:
-      exist = os.path.isfile(args.loadname)
-    print("Load model file available ? ", exist)
+      exists = os.path.isfile(args.loadname)
+    print("Load model file available ? ", exists, args.loadname)
     # Load the required model.
-    if 'finetune' in args.mode and not exists:
+    print("This", (not exists))
+    if ('finetune' in args.mode) and (not exists):
         print("Loading new mode")
         model = net.TextModelMY()
         load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
@@ -439,6 +442,7 @@ def main():
         ckpt = torch.load(args.loadname)
         model = ckpt['model']
         dataset2idx = ckpt['dataset2idx']
+        print("Loading the old saved model")
 
     original_model = copy.deepcopy(model)
 
@@ -459,6 +463,9 @@ def main():
 
     # Create the manager object.
     manager = Manager(args, original_model, model, dataset2idx)
+
+    print("Running eval on old model")
+    print(manager.eval())
 
     # Perform necessary mode operations.
     if args.mode == 'finetune':
