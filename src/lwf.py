@@ -83,8 +83,9 @@ def distillation_loss(y, teacher_scores, T, scale):
     return F.kl_div(F.log_softmax(y / T), F.softmax(teacher_scores / T)) * scale
 
 class Stepper():
-    def __init__(self, m, opt, crit, clip=0, reg_fn=None, fp16=False, loss_scale=1):
+    def __init__(self, m, opt, crit, original_model, clip=0, reg_fn=None, fp16=False, loss_scale=1):
         self.m,self.opt,self.crit,self.clip,self.reg_fn = m.model,opt,crit,clip,reg_fn
+        self.om = original_model
         self.modell = m
         self.fp16 = fp16
         self.reset(True)
@@ -274,7 +275,7 @@ class Manager(object):
         callbacks += [self.wd_sched]
         #s = Stepper(self.modell.model, self.loptimizer.opt, self.criterion)
         fit(self.modell, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
-        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks)
+        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model)
         #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
         #    self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
@@ -428,8 +429,8 @@ def main():
           dataset2idx[args.dataset] = max(idxs) + 1
     if args.cuda:
         model = model.cuda(0)
-        #if args.mode == 'finetune':
-        #    original_model = original_model.cuda(1)
+        if args.mode == 'finetune':
+            original_model = original_model.cuda(1)
 
     # Create the manager object.
     manager = Manager(args, original_model, model, dataset2idx)
