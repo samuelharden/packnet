@@ -103,20 +103,26 @@ class Stepper():
     def step(self, xs, y, epoch):
         xtra = []
         ll = xs[0]
-        print(type(xs), xs)
-        print(type(ll), ll)
+        #print(type(xs), xs)
+        #print(type(ll), ll)
         batch_original = ll.data.clone()
         batch_original = batch_original.cuda(1)
         batch_original = Variable(batch_original, requires_grad=False)
         orig_output = self.om.shared(batch_original)
-        print(batch_original, orig_output)
+        #print(batch_original, orig_output)
         target_logits = [classifier(orig_output[0]).data.cpu()
                          for classifier in self.om.classifiers]
         # Move to same GPU as current model.
         target_logits = [Variable(item.cuda(), requires_grad=False)
                          for item in target_logits]
         scale = [item.size(-1) for item in target_logits]
-
+        # Compute loss.
+        dist_loss = 0
+        # Apply distillation loss to all old tasks.
+        for idx in range(len(target_logits)):
+            dist_loss += distillation_loss(
+                pred_logits[idx], target_logits[idx], self.args.temperature, scale[idx])
+        print("Dist loss", dist_loss)
         output = self.this_model.shared(*xs)
         pred_logits = [classifier(output) for classifier in self.this_model.classifiers]
         output = pred_logits[-1]
