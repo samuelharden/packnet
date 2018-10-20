@@ -82,6 +82,55 @@ def distillation_loss(y, teacher_scores, T, scale):
     """
     return F.kl_div(F.log_softmax(y / T), F.softmax(teacher_scores / T)) * scale
 
+class Stepper():
+    def __init__(self, m, opt, crit, clip=0, reg_fn=None, fp16=False, loss_scale=1):
+        self.m,self.opt,self.crit,self.clip,self.reg_fn = m.model,opt,crit,clip,reg_fn
+        self.modell = m
+        self.fp16 = fp16
+        self.reset(True)
+        if self.fp16: self.fp32_params = copy_model_to_fp32(m, opt)
+        self.loss_scale = loss_scale
+
+    def reset(self, train=True):
+        if train: apply_leaf(self.m, set_train_mode)
+        else: self.m.eval()
+        if hasattr(self.m, 'reset'):
+            self.m.reset()
+            if self.fp16: self.fp32_params = copy_model_to_fp32(self.m, self.opt)
+
+    def step(self, xs, y, epoch):
+        xtra = []
+        output = self.m(*xs)
+        if isinstance(output,tuple): output,*xtra = output
+        if self.fp16: self.m.zero_grad()
+        else: self.opt.zero_grad() 
+        loss = raw_loss = self.crit(output, y)
+        if self.loss_scale != 1: assert(self.fp16); loss = loss*self.loss_scale
+        if self.reg_fn: loss = self.reg_fn(output, xtra, raw_loss)
+        loss.backward()
+        if self.fp16: update_fp32_grads(self.fp32_params, self.m)
+        if self.loss_scale != 1:
+            for param in self.fp32_params: param.grad.data.div_(self.loss_scale)
+        if self.clip:   # Gradient clipping
+            if IS_TORCH_04: nn.utils.clip_grad_norm_(trainable_params_(self.m), self.clip)
+            else: nn.utils.clip_grad_norm(trainable_params_(self.m), self.clip)
+        if 'wd' in self.opt.param_groups[0] and self.opt.param_groups[0]['wd'] != 0: 
+            #Weight decay out of the loss. After the gradient computation but before the step.
+            for group in self.opt.param_groups:
+                lr, wd = group['lr'], group['wd']
+                for p in group['params']:
+                    if p.grad is not None: p.data = p.data.add(-wd * lr, p.data)
+        self.opt.step()
+        if self.fp16: 
+            copy_fp32_to_model(self.m, self.fp32_params)
+            torch.cuda.synchronize()
+        return torch_item(raw_loss.data)
+
+    def evaluate(self, xs, y):
+        preds = self.m(*xs)
+        if isinstance(preds,tuple): preds=preds[0]
+        return preds, self.crit(preds, y)
+
 
 class Manager(object):
     """Handles training and pruning."""
@@ -223,8 +272,9 @@ class Manager(object):
         self.wd_sched = WeightDecaySchedule(self.loptimizer, batch_per_epoch, cl, 1, 1,
                                                 False, None)
         callbacks += [self.wd_sched]
-        fit(self.modell.model, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics)
-        #,clip=self.learn.clip, reg_fn=self.learn.reg_fn)
+        #s = Stepper(self.modell.model, self.loptimizer.opt, self.criterion)
+        fit(self.modell, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
+        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks)
         #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
         #    self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
