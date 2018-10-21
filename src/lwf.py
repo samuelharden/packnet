@@ -24,6 +24,7 @@ from fastai.text import *
 from fastai.core import *
 from fastai.lm_rnn import *
 import fastai.metrics as metrics
+import sys
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -105,9 +106,12 @@ class Stepper():
         ll = xs[0]
         #print(type(xs), xs)
         #print(type(ll), ll)
+        #print("ll", ll.size())
+        sys.stdout.flush()
         batch_original = ll.data.clone()
-        batch_original = batch_original.cuda(1)
         batch_original = Variable(batch_original, requires_grad=False)
+        batch_original = batch_original.cuda(0)
+        self.om.cuda(0)
         orig_output = self.om.shared(batch_original)
         #print(batch_original, orig_output)
         target_logits = [classifier(orig_output)[0].data.cpu()
@@ -118,8 +122,8 @@ class Stepper():
         scale = [item.size(-1) for item in target_logits]
         output = self.this_model.shared(*xs)
         pred_logits = [classifier(output) for classifier in self.this_model.classifiers]
-        output = pred_logits[-1]
-
+        output = self.this_model.classifier(output)
+        #output = self.m(*xs)
         # Compute loss.
         dist_loss = 0
         # Apply distillation loss to all old tasks.
@@ -127,7 +131,6 @@ class Stepper():
             dist_loss += distillation_loss(
                 pred_logits[idx][0], target_logits[idx], 2.0, scale[idx])
         #print("Dist loss", dist_loss, len(self.this_model.classifiers))
-        
         if isinstance(output,tuple): output,*xtra = output
         if self.fp16: self.m.zero_grad()
         else: self.opt.zero_grad() 
@@ -228,7 +231,7 @@ class Manager(object):
         """Runs model for one batch."""
         batch_original = batch.clone()
         if self.cuda:
-            batch_original = batch_original.cuda(1)
+            batch_original = batch_original.cuda(0)
             batch = batch.cuda()
             label = label.cuda()
         batch_original = Variable(batch_original, requires_grad=False)
@@ -301,8 +304,9 @@ class Manager(object):
                                                 False, None)
         callbacks += [self.wd_sched]
         #s = Stepper(self.modell.model, self.loptimizer.opt, self.criterion)
-        fit(self.modell, self.md, 3, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
+        fit(self.modell, self.md, 1, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
         ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model, this_model=self.model)
+         
         #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
         #    self.do_batch(optimizer, batch, label, epoch_idx)
 #        print("Params for shared")
@@ -459,13 +463,13 @@ def main():
     if args.cuda:
         model = model.cuda(0)
         if args.mode == 'finetune':
-            original_model = original_model.cuda(1)
+            original_model = original_model.cuda(0)
 
     # Create the manager object.
     manager = Manager(args, original_model, model, dataset2idx)
 
-    print("Running eval on old model")
-    print(manager.eval())
+#    print("Running eval on old model")
+#    print(manager.eval())
 
     # Perform necessary mode operations.
     if args.mode == 'finetune':
