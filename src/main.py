@@ -16,7 +16,8 @@ import dataset
 import networks as net
 import utils as utils
 from prune import SparsePruner
-
+import os
+import sys
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -287,21 +288,24 @@ def init_dump(arch):
         model = net.ModifiedResNet()
     elif arch == 'densenet121':
         model = net.ModifiedDenseNet()
+    elif arch == 'text':
+        model = net.TextModelMY()
     else:
         raise ValueError('Architecture type not supported.')
 
     previous_masks = {}
     for module_idx, module in enumerate(model.shared.modules()):
-        if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
+        print("Moduule list", module_idx, module)
+        if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear) or isinstance(module, nn.LSTM):
             mask = torch.ByteTensor(module.weight.data.size()).fill_(1)
             if 'cuda' in module.weight.data.type():
                 mask = mask.cuda()
             previous_masks[module_idx] = mask
     torch.save({
-        'dataset2idx': {'imagenet': 1},
+        'dataset2idx': {'imdb': 1},
         'previous_masks': previous_masks,
         'model': model,
-    }, '../checkpoints/imagenet/%s.pt' % (arch))
+    }, '../checkpoints/imdb/%s.pt' % (arch))
 
 
 def main():
@@ -322,11 +326,19 @@ def main():
         else:
             args.test_path = '../data/%s/test' % (args.dataset)
 
+    exists = False
+    if args.loadname:
+      print("Old model exists")
+      exists = os.path.isfile(args.loadname)
     # Load the required model.
-    if 'finetune' in args.mode and not args.loadname:
-        model = net.ModifiedVGG16()
-        previous_masks = []
+    if 'finetune' in args.mode and not exists:
+        model = net.TextModelMY()
+        previous_masks = {}
+        dataset2idx = {}
+        dataset2biases = {}
+        init_dump("text")
     else:
+        print(" Loading Old model")
         ckpt = torch.load(args.loadname)
         model = ckpt['model']
         previous_masks = ckpt['previous_masks']
@@ -335,7 +347,7 @@ def main():
             dataset2biases = ckpt['dataset2biases']
         else:
             dataset2biases = {}
-
+    print("Got this dataset" , args.dataset, args.num_outputs, previous_masks)
     # Add and set the model dataset.
     model.add_dataset(args.dataset, args.num_outputs)
     model.set_dataset(args.dataset)

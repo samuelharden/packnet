@@ -25,6 +25,9 @@ from fastai.core import *
 from fastai.lm_rnn import *
 import fastai.metrics as metrics
 import sys
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 # To prevent PIL warnings.
 warnings.filterwarnings("ignore")
@@ -87,6 +90,7 @@ class Stepper():
     def __init__(self, m, opt, crit, original_model, this_model, clip=0, reg_fn=None, fp16=False, loss_scale=1):
         self.m,self.opt,self.crit,self.clip,self.reg_fn = m.model,opt,crit,clip,reg_fn
         self.om = original_model
+        self.tsne = TSNE(n_components=2, perplexity=30.0) 
         self.this_model = this_model
         self.modell = m
         self.fp16 = fp16
@@ -187,20 +191,61 @@ class Manager(object):
                 args.test_path, args.batch_size, pin_memory=args.cuda)
             self.criterion = nn.CrossEntropyLoss()
 
+    def eval_all(self):
+      for layer in [0,1,2]:
+        labels_all = []
+        predictions_all = []
+        tsne_all = []
+        offset = 0
+        for d in self.dataset2idx:
+          print(d, self.dataset2idx[d], layer)
+          data_loader = dataset.test_loader(get_test_dataset(d), self.args.batch_size, pin_memory=self.args.cuda)
+          _,tsne,labels,predictions = self.eval_n(self.model, layer, data_loader, "unknown", d)
+          tsne_all.extend(tsne)
+          for l in range(len(labels)):
+            labels_all.append(labels[l]+offset)
+          predictions_all.extend(predictions)
+          offset = offset + 2
+        # data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset
+        self.run_tsne_embeddings(tsne_all, labels_all, predictions_all, "unknown", layer, "all_label_scaled")
+ 
+
     def eval(self):
+      self.eval_n(self.model, -1, self.test_data_loader, self.args.dataset, "normal")
+
+    def eval_n(self, runmodel, getlayer, use_test_data_loader, epoch, dataset):
         """Performs evaluation."""
-        self.model.eval()
+        print("Running evaluation")
+        runmodel.eval()
         error_meter = None
         labels_orig = []
         predictions_orig = []
+        tnse_embedding = []
+        data_view_tsne = []
         print('Performing eval...')
-        for batch, label in tqdm(self.test_data_loader, desc='Eval'):
+        tsne_obj = TSNE(n_components=2, perplexity=30.0)
+        for batch, label in tqdm(use_test_data_loader, desc='Eval'):
             if self.cuda:
                 batch = batch.cuda()
             batch = Variable(batch, volatile=True)
-
-            raw_output = self.model.forward(batch)
+            #print("Batch",batch)
+            raw_output = runmodel.shared(batch)
+            tmp = copy.deepcopy(raw_output)
+            rout, osss = tmp
+            #print("Length of outputs", len(rout), len(osss), osss[0].shape, osss[1].shape, osss[2].shape)
+            X_view = osss[getlayer]
+            raw_output = self.model.classifier(raw_output)
+            #print("Before", X_view.shape)
+            #X_view = X_view.view(X_view.size(1), -1)
+            sl,bs,_ = X_view.size()
+            X_max = F.adaptive_max_pool1d(X_view.permute(1,2,0), (1,)).view(bs,-1)
+            X_avg = F.adaptive_avg_pool1d(X_view.permute(1,2,0), (1,)).view(bs,-1)
+            X_new = torch.cat([X_view[-1], X_max, X_avg], 1)
+            #print("After SHape", X_new.shape)
+            sys.stdout.flush()
+            #print(X_embedded)
             output = raw_output[0]
+            #print("OUtputs", output.size(), "Batch", batch.size())
             output_np = to_np(output)
             #print("Outputs", output_np)
             predictions = np.argmax(output_np, axis=1)
@@ -210,6 +255,11 @@ class Manager(object):
 
             labels_orig.extend(label_np)
             predictions_orig.extend(predictions)
+            #for i in range(len(X_view)):
+            #  print(to_np(X_view[i])[:9000])
+            #  data_view_tsne.append(to_np(X_view[i]))
+            data_view_tsne.extend(to_np(X_new))
+            print("Before", len(data_view_tsne))
 
             # Init error meter.
             if error_meter is None:
@@ -218,14 +268,32 @@ class Manager(object):
                     topk.append(5)
                 error_meter = tnt.meter.ClassErrorMeter(topk=topk)
             error_meter.add(output.data, label)
-        #print("Labels, ", labels_orig, "predictions : ", predictions_orig)
         print(confusion_matrix(labels_orig, predictions_orig))
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
                                     t for t in zip(topk, errors)))
+        self.run_tsne_embeddings(data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset)
         sys.stdout.flush() 
         self.model.train()
-        return errors
+        return errors,data_view_tsne,labels_orig, predictions_orig
+
+
+    def run_tsne_embeddings(self, data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset):
+        tnse_embedding = TSNE(n_components=2, perplexity=30.0).fit_transform(data_view_tsne)
+        #tnse_embedding = PCA(n_components=2).fit_transform(data_view_tsne)
+        for i in range(0, len(tnse_embedding)):
+          print(i,tnse_embedding[i],labels_orig[i], predictions_orig[i])
+          if labels_orig[i] == 1:
+            plt.plot(tnse_embedding[i][0], tnse_embedding[i][1],"ro")
+          elif labels_orig[i] == 2:
+            plt.plot(tnse_embedding[i][0], tnse_embedding[i][1],"go")
+          elif labels_orig[i] == 3:
+            plt.plot(tnse_embedding[i][0], tnse_embedding[i][1],"yo")
+          else:
+            plt.plot(tnse_embedding[i][0], tnse_embedding[i][1],"bo")
+        plt.savefig("embedding_plot_epoch"+ str(epoch) + "layer_" + str(getlayer)+ "_dataset"+ dataset + ".png")
+        #print("TSNSE array", tnse_embedding)
+        #print("Labels, ", labels_orig, "predictions : ", predictions_orig)
 
     def do_batch(self, optimizer, batch, label, epoch_idx):
         """Runs model for one batch."""
@@ -414,6 +482,12 @@ class Manager(object):
                     print('Layer #%d: Pruned %d/%d (%.2f%%)' %
                           (layer_idx, num_zero, num_params, 100 * num_zero / num_params))
 
+def get_test_dataset(dataset):
+  return '../data/%s/' % (dataset)
+
+def get_train_dataset(dataset):
+  return '../data/%s/' % (dataset)
+
 
 def main():
     """Do stuff."""
@@ -421,12 +495,9 @@ def main():
 
     # Set default train and test path if not provided as input.
     if not args.train_path:
-        args.train_path = '../data/%s/train' % (args.dataset)
+        args.train_path = get_train_dataset(args.dataset)
     if not args.test_path:
-        if args.dataset == 'imagenet' or args.dataset == 'places':
-            args.test_path = '../data/%s/val' % (args.dataset)
-        else:
-            args.test_path = '../data/%s/test' % (args.dataset)
+        args.test_path = get_test_dataset(args.dataset)
 
     itos = pickle.load(open(args.train_path  + '/tmp/itos.pkl', 'rb'))
     vs = len(itos)
@@ -440,7 +511,7 @@ def main():
     if ('finetune' in args.mode) and (not exists):
         print("Loading new mode")
         model = net.TextModelMY()
-        load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
+        #load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
         dataset2idx = {}
     else:
         ckpt = torch.load(args.loadname)
@@ -508,7 +579,7 @@ def main():
         manager.check(verbose=True)
     elif args.mode == 'eval':
         # Just run the model on the eval set.
-        manager.eval()
+        manager.eval_all()
 
 
 if __name__ == '__main__':

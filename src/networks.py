@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import models
+from sklearn.manifold import TSNE
 
 from fastai.text import *
 from fastai.lm_rnn import *
@@ -50,6 +51,7 @@ class TextModelMY(nn.Module):
 
     def add_dataset(self, dataset, num_outputs):
         """Adds a new dataset to the classifier."""
+        print("Adding dataset", dataset, num_outputs)
         bptt,em_sz,nh,nl = 70,400,1150,3
         dps = np.array([0.4,0.5,0.05,0.3,0.4])*1.0
         if dataset not in self.datasets:
@@ -63,9 +65,20 @@ class TextModelMY(nn.Module):
         self.model = nn.Sequential(self.shared, self.classifier)
 
     def forward(self, x):
+        print("Batch", x.size())
         x = self.shared(x)
         #x = x.view(x[0].size(0), -1)
+        #print("Shared", x[0])
+        #X_embedded = TSNE(n_components=2).fit_transform(x[0])
+        X_view = copy.deepcopy(x[0][0])
+        print("Before", X_view.shape)
+        X_view = X_view.view(X_view.size(1), -1)
+        print("After SHape", X_view.shape)
+        sys.stdout.flush()
+        X_embedded = TSNE(n_components=2).fit_transform(to_np(X_view))
+        print(X_embedded)
         x = self.classifier(x)
+        #print("Classifier", x.size())
         return x
 
     def train_nobn(self, mode=True):

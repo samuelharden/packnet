@@ -6,9 +6,13 @@
 declare -A DATASETS
 DATASETS["i"]="imdb"
 DATASETS["a"]="ag"
+DATASETS["o"]="ag12"
+DATASETS["t"]="ag34"
 declare -A NUM_OUTPUTS
 NUM_OUTPUTS["imdb"]="2"
 NUM_OUTPUTS["ag"]="4"
+NUM_OUTPUTS["ag12"]="2"
+NUM_OUTPUTS["ag34"]="2"
 
 ORDER=$1
 LOADNAME=$2
