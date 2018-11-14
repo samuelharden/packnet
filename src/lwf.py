@@ -87,12 +87,15 @@ def distillation_loss(y, teacher_scores, T, scale):
     return F.kl_div(F.log_softmax(y / T), F.softmax(teacher_scores / T)) * scale
 
 class Stepper():
-    def __init__(self, m, opt, crit, original_model, this_model, clip=0, reg_fn=None, fp16=False, loss_scale=1):
+    def __init__(self, m, opt, crit, original_model, this_model, examples, example_labels, 
+                 clip=0, reg_fn=None, fp16=False, loss_scale=1):
         self.m,self.opt,self.crit,self.clip,self.reg_fn = m.model,opt,crit,clip,reg_fn
         self.om = original_model
         self.tsne = TSNE(n_components=2, perplexity=30.0) 
         self.this_model = this_model
         self.modell = m
+        self.examples = examples
+        self.example_lbl = example_labels
         self.fp16 = fp16
         self.reset(True)
         if self.fp16: self.fp32_params = copy_model_to_fp32(m, opt)
@@ -105,18 +108,56 @@ class Stepper():
             self.m.reset()
             if self.fp16: self.fp32_params = copy_model_to_fp32(self.m, self.opt)
 
+    def transform_output(self, output):
+      rout, osss = output
+      X_view = osss[-1]
+      sl,bs,_ = X_view.size()
+      X_max = F.adaptive_max_pool1d(X_view.permute(1,2,0), (1,)).view(bs,-1)
+      X_avg = F.adaptive_avg_pool1d(X_view.permute(1,2,0), (1,)).view(bs,-1)
+      X_new = torch.cat([X_view[-1], X_max, X_avg], 1)
+      return to_np(X_new)
+
+    def distance(self, d1, d2):
+      #print(d1, d2)
+      return ((d1[0] - d2[0])**2 + (d1[1] - d1[1])**2)**(0.5)
+
+    def compute_tsne_difference(self, tsne_data, num_examples):
+      data = TSNE(n_components=2, perplexity=30.0).fit_transform(tsne_data)
+      distance_loss = 0
+      #print("TSNE DATA", data)
+      for i in range(64):
+        distance_loss += self.distance(data[i], data[i + num_examples])
+      return distance_loss/64
+
     def step(self, xs, y, epoch):
         xtra = []
         ll = xs[0]
         #print(type(xs), xs)
         #print(type(ll), ll)
         #print("ll", ll.size())
+        #print(self.examples, self.example_lbl)
         sys.stdout.flush()
         batch_original = ll.data.clone()
         batch_original = Variable(batch_original, requires_grad=False)
         batch_original = batch_original.cuda(0)
         self.om.cuda(0)
         orig_output = self.om.shared(batch_original)
+
+        '''
+        loss_tsne = 0
+        ## CHange output to something which can be feed into tsne model
+        tsne_data = []
+        orig_e = Variable(self.examples,  requires_grad=False)
+        this_e = Variable(self.examples,  requires_grad=False)
+        orig_e.cuda(0)
+        this_e.cuda(0)
+        orig_examples = self.transform_output(self.om.shared(orig_e))
+        this_examples = self.transform_output(self.this_model.shared(this_e))
+        tsne_data.extend(orig_examples)
+        tsne_data.extend(this_examples)
+        loss_tsne = self.compute_tsne_difference(tsne_data, 64)
+        #print("tsne loss", loss_tsne)
+        '''
         #print(batch_original, orig_output)
         target_logits = [classifier(orig_output)[0].data.cpu()
                          for classifier in self.om.classifiers]
@@ -138,10 +179,12 @@ class Stepper():
         if isinstance(output,tuple): output,*xtra = output
         if self.fp16: self.m.zero_grad()
         else: self.opt.zero_grad() 
-        loss = raw_loss = self.crit(output, y)
-        loss = loss + dist_loss
+        loss = raw_loss = self.crit(output, y) + dist_loss
+#        raw_loss = loss + dist_loss + loss_tsne
+        #print("Before loss", self.reg_fn, loss)
         if self.loss_scale != 1: assert(self.fp16); loss = loss*self.loss_scale
         if self.reg_fn: loss = self.reg_fn(output, xtra, raw_loss)
+        #print("After loss", loss)
         loss.backward()
         if self.fp16: update_fp32_grads(self.fp32_params, self.m)
         if self.loss_scale != 1:
@@ -191,7 +234,36 @@ class Manager(object):
                 args.test_path, args.batch_size, pin_memory=args.cuda)
             self.criterion = nn.CrossEntropyLoss()
 
+    def get_examplers(self):
+      num_examplers = 64
+      num_datasets = len(self.dataset2idx)
+      examples = []
+      lbl = []
+      if num_datasets < 2:
+        return examples,lbl 
+      num_datasets_examplers = num_examplers/float(num_datasets - 1)
+      print("Number of datasets we have are: ", num_datasets, num_datasets_examplers)
+      for d in self.dataset2idx:
+        print("We have following datasets", d, self.dataset2idx[d], self.args.dataset)
+        if d != self.args.dataset:
+          print("Lets add this datasets to examplers")
+          data_loader = dataset.test_loader(get_test_dataset(d), num_datasets_examplers, pin_memory=self.args.cuda)
+          for btch,label in data_loader:
+            #btch = data_loader.get_batch([0])
+            examples = btch
+            lbl = label
+            break
+      return examples,lbl
+      
     def eval_all(self):
+        for d in self.dataset2idx:
+          self.model.set_dataset(d)
+          print("Evaluating", d, self.dataset2idx[d])
+          data_loader = dataset.test_loader(get_test_dataset(d), self.args.batch_size, pin_memory=self.args.cuda)
+          self.eval_n(self.model, -1, data_loader, "unknown", d)
+        self.model.set_dataset(self.args.dataset)
+
+    def eval_all_layers(self):
       for layer in [0,1,2]:
         labels_all = []
         predictions_all = []
@@ -207,11 +279,11 @@ class Manager(object):
           predictions_all.extend(predictions)
           offset = offset + 2
         # data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset
-        self.run_tsne_embeddings(tsne_all, labels_all, predictions_all, "unknown", layer, "all_label_scaled")
+        #self.run_tsne_embeddings(tsne_all, labels_all, predictions_all, "unknown", layer, "all_label_scaled")
  
 
     def eval(self):
-      self.eval_n(self.model, -1, self.test_data_loader, self.args.dataset, "normal")
+      return self.eval_n(self.model, -1, self.test_data_loader, self.args.dataset, "normal")
 
     def eval_n(self, runmodel, getlayer, use_test_data_loader, epoch, dataset):
         """Performs evaluation."""
@@ -259,7 +331,7 @@ class Manager(object):
             #  print(to_np(X_view[i])[:9000])
             #  data_view_tsne.append(to_np(X_view[i]))
             data_view_tsne.extend(to_np(X_new))
-            print("Before", len(data_view_tsne))
+            #print("Before", len(data_view_tsne))
 
             # Init error meter.
             if error_meter is None:
@@ -272,7 +344,7 @@ class Manager(object):
         errors = error_meter.value()
         print('Error: ' + ', '.join('@%s=%.2f' %
                                     t for t in zip(topk, errors)))
-        self.run_tsne_embeddings(data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset)
+        #self.run_tsne_embeddings(data_view_tsne, labels_orig, predictions_orig, epoch, getlayer, dataset)
         sys.stdout.flush() 
         self.model.train()
         return errors,data_view_tsne,labels_orig, predictions_orig
@@ -372,8 +444,10 @@ class Manager(object):
                                                 False, None)
         callbacks += [self.wd_sched]
         #s = Stepper(self.modell.model, self.loptimizer.opt, self.criterion)
-        fit(self.modell, self.md, 1, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper
-        ,clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model, this_model=self.model)
+        exampls,lbl = self.get_examplers()
+        fit(self.modell, self.md, 1, self.loptimizer.opt, self.criterion,metrics=self.learn.metrics, stepper=Stepper,
+         clip=self.learn.clip, reg_fn=self.learn.reg_fn, callbacks=callbacks, original_model=self.original_model, this_model=self.model,
+         examples=exampls, example_labels=lbl)
          
         #for batch, label in tqdm(self.train_data_loader, desc='Epoch: %d ' % (epoch_idx)):
         #    self.do_batch(optimizer, batch, label, epoch_idx)
@@ -445,7 +519,8 @@ class Manager(object):
                                       self.args.lr_decay_factor, optimizer)
             self.model.train()
             self.do_epoch(epoch_idx, optimizer)
-            errors = self.eval()
+            errors,_,_,_ = self.eval()
+            self.eval_all()
             error_history.append(errors)
             accuracy = 100 - errors[0]  # Top-1 accuracy.
 
@@ -511,7 +586,7 @@ def main():
     if ('finetune' in args.mode) and (not exists):
         print("Loading new mode")
         model = net.TextModelMY()
-        #load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
+        load_model(model.shared, args.train_path + "/models/fwd_pretrain_wiki_finetunelm_lm_enc.h5")
         dataset2idx = {}
     else:
         ckpt = torch.load(args.loadname)
@@ -544,7 +619,10 @@ def main():
 
     # Perform necessary mode operations.
     if args.mode == 'finetune':
+        print("Evaluating all models before starting")
+        manager.eval_all()
         print("Doing the fine tuning")
+        model.set_dataset(args.dataset)
         # Get optimizer with correct params.
         if args.finetune_layers == 'all':
             print("Doing the fine tuning for all later")
